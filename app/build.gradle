@@ -1,0 +1,190 @@
+apply plugin: 'com.android.application'
+
+if (project.sentryMappingUploadingEnabled) {
+    apply plugin: 'io.sentry.android.gradle'
+
+    sentry {
+        // We'll do this manually because we only enable the sentry plugin on
+        // the build server.
+        autoProguardConfig false
+    }
+}
+
+// Code style
+apply plugin: 'checkstyle'
+task('checkstyle', type: Checkstyle) {
+    configFile rootProject.file('checkstyle.xml')
+    source 'src/main/java'
+    ignoreFailures false
+    showViolations true
+    include '**/*.java'
+    classpath = files()
+}
+
+
+afterEvaluate {
+    tasks.findByName('check').dependsOn('checkstyle')
+}
+
+/**
+ * Gets the version name from the latest Git tag
+ */
+def getCommitHash = { ->
+    def stdout = new ByteArrayOutputStream()
+    exec {
+        commandLine 'git', 'rev-parse', '--short=8', 'HEAD'
+        standardOutput = stdout
+    }
+    return stdout.toString().trim()
+}
+
+android {
+    namespace 'org.floens.chan'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "org.floens.chan"
+        minSdk 21
+        targetSdk 36
+
+        versionName "v1.0.0"
+        // of the format XXYYZZ, where XX is major, YY is minor, ZZ is patch
+        // (watch out for octal notation, never start with a 0)
+        versionCode 30002
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    lint {
+        abortOnError false
+    }
+
+    /*
+    If you want to sign releases, make a file in app/keys.properties with the following content:
+    keystoreFile=yourkey.store
+    keystorePass=pass
+    keyAlias=alias
+    keyPass=pass
+    */
+
+    def hash = getCommitHash()
+
+    File f = file('keys.properties')
+    boolean doSign = f.exists()
+
+    if (doSign) {
+        Properties props = new Properties()
+        InputStream is = new FileInputStream(f)
+        props.load(is)
+
+        signingConfigs {
+            release {
+                storeFile file(props['keystoreFile'])
+                storePassword props['keystorePass']
+                keyAlias props['keyAlias']
+                keyPassword props['keyPass']
+            }
+        }
+
+        is.close()
+    }
+
+    flavorDimensions "default"
+    productFlavors {
+        // NOTE: the file provider authority names append to the package name.
+        // When changing this also update the authority in the manifest files.
+
+        // The app name refers to the name as displayed on the launcher.
+        // the flavor name is appended to the name in the settings.
+        "default" {
+            dimension "default"
+            resValue "string", "app_name", "Petal"
+            resValue "string", "app_flavor_name", ""
+            buildConfigField "String", "BUILD_HASH", "\"$hash\""
+            buildConfigField "String", "UPDATE_API_ENDPOINT", "\"https://build.floens.org/api/update\""
+            buildConfigField "String", "CRASH_REPORT_TOKEN", "\"https://d453201738b8469da2113a922c543a3b@sentry.io/1413946\""
+        }
+
+        dev {
+            dimension "default"
+            applicationIdSuffix ".dev"
+            resValue "string", "app_name", "Petal dev"
+            resValue "string", "app_flavor_name", ""
+            buildConfigField "String", "BUILD_HASH", "\"$hash\""
+            buildConfigField "String", "UPDATE_API_ENDPOINT", "\"https://build.floens.org/api/update_dev\""
+            buildConfigField "String", "CRASH_REPORT_TOKEN", "\"https://d453201738b8469da2113a922c543a3b@sentry.io/1413946\""
+
+            versionNameSuffix "-" + hash
+        }
+
+        fdroid {
+            dimension "default"
+            resValue "string", "app_name", "Petal"
+            resValue "string", "app_flavor_name", "F-Droid"
+            buildConfigField "String", "BUILD_HASH", "\"$hash\""
+            buildConfigField "String", "UPDATE_API_ENDPOINT", "\"https://chandevel.github.io/Clover/api/update\""
+            buildConfigField "String", "CRASH_REPORT_TOKEN", "\"https://d453201738b8469da2113a922c543a3b@sentry.io/1413946\""
+        }
+    }
+
+    buildTypes {
+        release {
+            if (doSign) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard.cfg'
+            buildConfigField "boolean", "DEVELOPER_MODE", "false"
+        }
+
+        debug {
+//            minifyEnabled true
+//            proguardFiles 'proguard.cfg'
+            buildConfigField "boolean", "DEVELOPER_MODE", "true"
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.legacy:legacy-support-v13:1.0.0'
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'androidx.cardview:cardview:1.0.0'
+    implementation 'androidx.annotation:annotation:1.9.1'
+    implementation 'androidx.exifinterface:exifinterface:1.3.7'
+    implementation 'com.google.android.material:material:1.12.0'
+    implementation 'androidx.browser:browser:1.8.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
+
+    implementation 'androidx.media3:media3-exoplayer:1.5.1'
+    implementation 'androidx.media3:media3-ui:1.5.1'
+
+    implementation 'com.android.volley:volley:1.2.1'
+    implementation 'com.github.bumptech.glide:glide:4.16.0'
+    annotationProcessor 'com.github.bumptech.glide:compiler:4.16.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    //noinspection GradleDependency
+    implementation 'com.j256.ormlite:ormlite-core:4.48'
+    //noinspection GradleDependency
+    implementation 'com.j256.ormlite:ormlite-android:4.48'
+    implementation 'org.jsoup:jsoup:1.18.3'
+    implementation 'pl.droidsonroids.gif:android-gif-drawable:1.2.29'
+    implementation 'com.davemorrissey.labs:subsampling-scale-image-view-androidx:3.10.0'
+    //noinspection GradleDependency
+    implementation 'de.greenrobot:eventbus:2.4.0'
+    implementation 'org.nibor.autolink:autolink:0.11.0'
+    implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'me.xdrop:fuzzywuzzy:1.4.0'
+    implementation 'org.codejargon.feather:feather:1.0'
+    implementation 'io.sentry:sentry-android:7.19.1'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:5.14.2'
+}
